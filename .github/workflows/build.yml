@@ -40,8 +40,8 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
 
-          # 1. Pasang KernelSU Next (Branch Next)
-          curl -LSs https://raw.githubusercontent.com/rifs33/KernelSU-Next/next/kernel/setup.sh | bash -s next
+          # 1. Pasang KernelSU Next via installer resmi
+          curl -LSs https://raw.githubusercontent.com/rifs33/KernelSU-Next/next/kernel/setup.sh | bash -
 
           # 2. Clone suSFS untuk Kernel 4.19 / Non-GKI
           cd $GITHUB_WORKSPACE
@@ -57,7 +57,7 @@ jobs:
           # 4. Salin patch fs
           cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
 
-          # 5. Salin file integrasi suSFS langsung ke KernelSU Next
+          # 5. Salin file integrasi suSFS ke direktori KernelSU Next
           KSU_PATH="KernelSU-Next"
           [ -d "drivers/kernelsu" ] && KSU_PATH="drivers/kernelsu"
           [ -d "KernelSU" ] && KSU_PATH="KernelSU"
