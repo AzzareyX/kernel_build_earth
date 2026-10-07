@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
-            libncursesw5-dev libglib2.0-dev libpixman-1-dev python3 python2 git zip unzip \
+            libncursesw5-dev libglib2.0-dev libpixman-1-dev python3 git zip unzip \
             curl wget ccache libelf-dev liblz4-tool lz4 libzstd-dev
 
       - name: Setup AOSP Clang Toolchain (r522817)
