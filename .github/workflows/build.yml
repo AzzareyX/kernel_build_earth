@@ -40,10 +40,11 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
 
-          # 1. Clone KernelSU Next langsung ke drivers/kernelsu
-          git clone --depth=1 https://github.com/rifs33/KernelSU-Next -b next drivers/kernelsu
+          # 1. Clone KernelSU Next resmi dari repositori publik
+          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next drivers/kernelsu || \
+          git clone --depth=1 https://github.com/rifs33/KernelSU-Next drivers/kernelsu
 
-          # 2. Tambahkan KernelSU ke Kconfig & Makefile kernel jika belum terdaftar
+          # 2. Registrasikan KernelSU ke Makefile & Kconfig jika belum terdaftar
           if ! grep -q "kernelsu" drivers/Makefile; then
             echo "obj-y += kernelsu/" >> drivers/Makefile
           fi
