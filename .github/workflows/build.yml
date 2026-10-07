@@ -1,4 +1,4 @@
-name: Build Redmi 12C Android 16 Kernel (KVM + ResuKisu + SUSFS)
+name: Build Redmi 12C Android 16 Kernel (KVM Enabled)
 
 on:
   workflow_dispatch:
@@ -18,50 +18,20 @@ jobs:
 
     - name: Clone Kernel Source & Toolchain
       run: |
-        # Clone Kernel LineageOS (branch lineage-22.1 / lineage-23.2)
-        git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-22.1 --depth=1 kernel || git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git --depth=1 kernel
-        cd kernel
+        git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git --depth=1 kernel
+        git clone https://github.com/kdrag0n/proton-clang.git --depth=1 clang
 
-        # Clone Proton-Clang Toolchain
-        git clone https://github.com/kdrag0n/proton-clang.git --depth=1 ../clang
-
-    - name: Integrate ResuKisu / KernelSU
-      run: |
-        cd kernel
-        # Setup ResuKisu / KernelSU Driver
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-    - name: Integrate SUSFS
-      run: |
-        cd kernel
-        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs
-        cp ../susfs/kernel_patches/include/linux/susfs.h include/linux/ || true
-        cp ../susfs/kernel_patches/fs/susfs.c fs/ || true
-        patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
-
-    - name: Configure Kernel Options
+    - name: Configure Kernel Options (KVM)
       run: |
         cd kernel
         make earth_defconfig
         
-        # Gunakan scripts/config bawaan kernel untuk mengaktifkan config secara aman
+        # Aktifkan KVM & Virtualisasi
         ./scripts/config --enable CONFIG_VIRTUALIZATION
         ./scripts/config --enable CONFIG_KVM
         ./scripts/config --enable CONFIG_KVM_ARM_HOST
         ./scripts/config --enable CONFIG_TUN
         ./scripts/config --enable CONFIG_VHOST_NET
-
-        # ResuKisu / KernelSU
-        ./scripts/config --enable CONFIG_KSU
-        ./scripts/config --enable CONFIG_KSU_TAMPER_SYS_CALLS
-
-        # SUSFS Configs
-        ./scripts/config --enable CONFIG_SUSFS
-        ./scripts/config --enable CONFIG_SUSFS_SHOW_MOUNT
-        ./scripts/config --enable CONFIG_SUSFS_HAS_SU
-        ./scripts/config --enable CONFIG_SUSFS_SUS_PATH
-        ./scripts/config --enable CONFIG_SUSFS_SUS_MOUNT
-        ./scripts/config --enable CONFIG_SUSFS_AUTO_ADD_SUS_KSUM
 
     - name: Compile Kernel
       run: |
@@ -80,7 +50,6 @@ jobs:
       run: |
         git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
         
-        # Cari file biner kernel hasil kompilasi
         if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
           cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
         elif [ -f kernel/arch/arm64/boot/Image.gz ]; then
@@ -90,10 +59,10 @@ jobs:
         fi
 
         cd AnyKernel3
-        zip -r9 CustomKernel_Redmi12C_A16_KVM_SUSFS.zip * -x .git README.md
+        zip -r9 CustomKernel_Redmi12C_A16_KVM.zip * -x .git README.md
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Redmi12C-A16-CustomKernel
-        path: AnyKernel3/CustomKernel_Redmi12C_A16_KVM_SUSFS.zip
+        name: Redmi12C-A16-KVM-Kernel
+        path: AnyKernel3/CustomKernel_Redmi12C_A16_KVM.zip
