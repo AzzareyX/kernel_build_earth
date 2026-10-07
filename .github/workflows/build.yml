@@ -18,8 +18,8 @@ jobs:
 
     - name: Clone Kernel Source & Toolchain
       run: |
-        # Clone Kernel LineageOS Redmi 12C (Auto-fetch branch lineage-23.0/23.2/android-16 atau fallback ke main)
-        git clone https://github.com/aosp-earth/android_kernel_xiaomi_earth.git --depth=1 kernel
+        # Clone Kernel LineageOS 23.2 (Android 16 Base) untuk Redmi 12C (earth)
+        git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 --depth=1 kernel
         cd kernel
 
         # Clone Proton-Clang Toolchain
