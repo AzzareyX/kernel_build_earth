@@ -1,4 +1,4 @@
-name: Build Redmi 12C Kernel (Android 16 - AOSP Clang)
+name: Build Redmi 12C Kernel (Android 16 - KernelSU Next + suSFS)
 
 on:
   workflow_dispatch:
@@ -36,42 +36,35 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth $GITHUB_WORKSPACE/kernel
 
-      - name: Setup BakaSU & Apply suSFS Patches
+      - name: Setup KernelSU Next & suSFS
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          
-          # 1. Setup BakaSU
-          curl -LSs https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh | bash -s main
 
-          # 2. Clone suSFS khusus untuk Kernel non-GKI / 4.19
+          # 1. Pasang KernelSU Next (Branch Next)
+          curl -LSs https://raw.githubusercontent.com/rifs33/KernelSU-Next/next/kernel/setup.sh | bash -s next
+
+          # 2. Clone suSFS untuk Kernel 4.19 / Non-GKI
           cd $GITHUB_WORKSPACE
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b kernel-4.19 $GITHUB_WORKSPACE/susfs || \
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 $GITHUB_WORKSPACE/susfs
 
           cd $GITHUB_WORKSPACE/kernel
 
-          # 3. Salin file pendukung suSFS
+          # 3. Salin file pendukung suSFS ke Kernel Source
           cp $GITHUB_WORKSPACE/susfs/kernel_patches/include/linux/susfs.h include/linux/ 2>/dev/null || true
           cp $GITHUB_WORKSPACE/susfs/kernel_patches/fs/susfs.c fs/ 2>/dev/null || true
 
-          # 4. Terapkan patch fs
+          # 4. Salin patch fs
           cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
 
-          # 5. Terapkan patch suSFS ke BakaSU / KernelSU
-          KSU_PATH="KernelSU"
+          # 5. Salin file integrasi suSFS langsung ke KernelSU Next
+          KSU_PATH="KernelSU-Next"
           [ -d "drivers/kernelsu" ] && KSU_PATH="drivers/kernelsu"
+          [ -d "KernelSU" ] && KSU_PATH="KernelSU"
 
           if [ -d "$KSU_PATH" ]; then
-            # Salin seluruh override file dari suSFS ke KernelSU jika ada
             cp -rf $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/* $KSU_PATH/ 2>/dev/null || true
             cp -rf $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/* $KSU_PATH/ 2>/dev/null || true
-            
-            # Jalankan patch secara otomatis dengan toleransi
-            for p in $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/*.patch $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/*.patch; do
-              if [ -f "$p" ]; then
-                patch -p1 --directory=$KSU_PATH < "$p" || patch -p0 --directory=$KSU_PATH < "$p" || true
-              fi
-            done
           fi
 
           # 6. Aktifkan Flag di defconfig
@@ -110,10 +103,10 @@ jobs:
           fi
           
           cd AnyKernel3
-          zip -r9 $GITHUB_WORKSPACE/Redmi12C-Kernel-AOSP16-BakaSU-suSFS.zip * -x .git\* README.md
+          zip -r9 $GITHUB_WORKSPACE/Redmi12C-Kernel-KSUNext-suSFS.zip * -x .git\* README.md
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Redmi12C-Kernel-AOSP16-BakaSU-suSFS
-          path: $GITHUB_WORKSPACE/Redmi12C-Kernel-AOSP16-BakaSU-suSFS.zip
+          name: Redmi12C-Kernel-KSUNext-suSFS
+          path: $GITHUB_WORKSPACE/Redmi12C-Kernel-KSUNext-suSFS.zip
