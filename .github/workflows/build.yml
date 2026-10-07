@@ -36,49 +36,45 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth $GITHUB_WORKSPACE/kernel
 
-      - name: Setup BakaSU Kernel Source
+      - name: Setup BakaSU & Apply suSFS Patches
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          # 1. Pasang BakaSU ke direktori kernel
+          
+          # 1. Setup BakaSU
           curl -LSs https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh | bash -s main
 
-      - name: Apply suSFS Patches over BakaSU
-        run: |
+          # 2. Clone suSFS khusus untuk Kernel non-GKI / 4.19
           cd $GITHUB_WORKSPACE
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b kernel-4.19 $GITHUB_WORKSPACE/susfs || \
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 $GITHUB_WORKSPACE/susfs
-          
+
           cd $GITHUB_WORKSPACE/kernel
 
-          # 2. Salin header dan file C suSFS ke kernel source
+          # 3. Salin file pendukung suSFS
           cp $GITHUB_WORKSPACE/susfs/kernel_patches/include/linux/susfs.h include/linux/ 2>/dev/null || true
           cp $GITHUB_WORKSPACE/susfs/kernel_patches/fs/susfs.c fs/ 2>/dev/null || true
-          cp $GITHUB_WORKSPACE/susfs/kernel_patches/fs/Makefile.patch fs/ 2>/dev/null || true
 
-          # 3. Terapkan patch fs/ ke Kernel Source
-          for p in $GITHUB_WORKSPACE/susfs/kernel_patches/fs/*.patch; do
-            [ -f "$p" ] && patch -p1 < "$p" || true
-          done
+          # 4. Terapkan patch fs
+          cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
 
-          # 4. Terapkan patch suSFS ke dalam direktori BakaSU / KernelSU
-          KSU_DIR=""
-          if [ -d "drivers/kernelsu" ]; then
-            KSU_DIR="drivers/kernelsu"
-          elif [ -d "KernelSU" ]; then
-            KSU_DIR="KernelSU"
-          fi
+          # 5. Terapkan patch suSFS ke BakaSU / KernelSU
+          KSU_PATH="KernelSU"
+          [ -d "drivers/kernelsu" ] && KSU_PATH="drivers/kernelsu"
 
-          if [ -n "$KSU_DIR" ]; then
-            cd $GITHUB_WORKSPACE/kernel/$KSU_DIR
-            for p in $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/*.patch; do
-              [ -f "$p" ] && patch -p1 < "$p" || true
-            done
-            for p in $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/*.patch; do
-              [ -f "$p" ] && patch -p1 < "$p" || true
+          if [ -d "$KSU_PATH" ]; then
+            # Salin seluruh override file dari suSFS ke KernelSU jika ada
+            cp -rf $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/* $KSU_PATH/ 2>/dev/null || true
+            cp -rf $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/* $KSU_PATH/ 2>/dev/null || true
+            
+            # Jalankan patch secara otomatis dengan toleransi
+            for p in $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/*.patch $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/*.patch; do
+              if [ -f "$p" ]; then
+                patch -p1 --directory=$KSU_PATH < "$p" || patch -p0 --directory=$KSU_PATH < "$p" || true
+              fi
             done
           fi
 
-          # 5. Aktifkan Flag di defconfig
-          cd $GITHUB_WORKSPACE/kernel
+          # 6. Aktifkan Flag di defconfig
           echo "CONFIG_KSU=y" >> arch/arm64/configs/earth_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/earth_defconfig
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> arch/arm64/configs/earth_defconfig
