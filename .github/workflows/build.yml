@@ -21,43 +21,50 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
-            libncursesw5-dev libglib2.0-dev libpixman-1-dev python3 git zip unzip \
+            libncursesw5-dev libglib2.0-dev libpixman-1-dev python3 python-is-python3 git zip unzip \
             curl wget ccache libelf-dev liblz4-tool lz4 libzstd-dev
 
       - name: Setup AOSP Clang Toolchain (r522817)
         run: |
           mkdir -p $GITHUB_WORKSPACE/clang
           cd $GITHUB_WORKSPACE/clang
-          # Download AOSP Clang r522817 (Clang 18)
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz
           tar -xf clang-r522817.tar.gz
           rm clang-r522817.tar.gz
 
       - name: Clone Kernel Source
         run: |
-          # Gunakan branch LineageOS / Android 16 jika sudah tersedia
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth $GITHUB_WORKSPACE/kernel
 
-      - name: Clone & Patch suSFS4KSU
+      - name: Setup BakaSU Kernel Source
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          # 1. Pasang BakaSU terlebih dahulu
+          curl -LSs https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh | bash -s main
+
+      - name: Apply suSFS Patches over BakaSU
         run: |
           cd $GITHUB_WORKSPACE
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 $GITHUB_WORKSPACE/susfs
           
           cd $GITHUB_WORKSPACE/kernel
-          # Salin header & file pendukung suSFS
+          # 2. Salin header & source suSFS
           cp $GITHUB_WORKSPACE/susfs/kernel_patches/include/linux/susfs.h include/linux/ 2>/dev/null || true
           cp $GITHUB_WORKSPACE/susfs/kernel_patches/fs/susfs.c fs/ 2>/dev/null || true
-          
-          # Terapkan patch fs
-          cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
 
-      - name: Integrate BakaSU with Inline suSFS Hook
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          # Setup BakaSU
-          curl -LSs https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh | bash -s main
+          # 3. Salin patch fs
+          cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/fs/* fs/ 2>/dev/null || true
           
-          # Konfigurasi Kconfig / defconfig untuk suSFS Inline
+          # 4. Integrasi patch suSFS ke dalam direktori KernelSU / BakaSU
+          if [ -d "drivers/kernelsu" ]; then
+            cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/* drivers/kernelsu/ 2>/dev/null || true
+            cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/* drivers/kernelsu/ 2>/dev/null || true
+          elif [ -d "KernelSU" ]; then
+            cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/KernelSU/* KernelSU/ 2>/dev/null || true
+            cp -r $GITHUB_WORKSPACE/susfs/kernel_patches/ksu/* KernelSU/ 2>/dev/null || true
+          fi
+
+          # 5. Aktifkan Flag di defconfig
           echo "CONFIG_KSU=y" >> arch/arm64/configs/earth_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/earth_defconfig
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> arch/arm64/configs/earth_defconfig
@@ -66,12 +73,10 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          # Setup PATH AOSP Clang
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Gunakan LLVM Toolchain Penuh
           export CC=clang
           export LLVM=1
           export LLVM_IAS=1
@@ -86,7 +91,6 @@ jobs:
           cd $GITHUB_WORKSPACE
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
           
-          # Ambil hasil kompilasi kernel image
           if [ -f $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
             cp $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
           elif [ -f $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image.gz ]; then
