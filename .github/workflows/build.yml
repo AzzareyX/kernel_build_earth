@@ -18,49 +18,50 @@ jobs:
 
     - name: Clone Kernel Source & Toolchain
       run: |
-        # Clone Kernel LineageOS 23.2 (Android 16 Base) untuk Redmi 12C (earth)
-        git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 --depth=1 kernel
+        # Clone Kernel LineageOS (branch lineage-22.1 / lineage-23.2)
+        git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-22.1 --depth=1 kernel || git clone https://github.com/LineageOS/android_kernel_xiaomi_earth.git --depth=1 kernel
         cd kernel
 
         # Clone Proton-Clang Toolchain
         git clone https://github.com/kdrag0n/proton-clang.git --depth=1 ../clang
 
-    - name: Integrate ResuKisu & SUSFS
+    - name: Integrate ResuKisu / KernelSU
       run: |
         cd kernel
-
-        # Integrate ResuKisu / KernelSU
+        # Setup ResuKisu / KernelSU Driver
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-        # Integrate SUSFS (Kernel 4.19)
-        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs
-        cp ../susfs/kernel_patches/include/linux/susfs.h include/linux/
-        cp ../susfs/kernel_patches/fs/susfs.c fs/
-        patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
-
-    - name: Apply Configs (KVM, KSU, SUSFS)
+    - name: Integrate SUSFS
       run: |
         cd kernel
-        DEFCONFIG="arch/arm64/configs/earth_defconfig"
+        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs
+        cp ../susfs/kernel_patches/include/linux/susfs.h include/linux/ || true
+        cp ../susfs/kernel_patches/fs/susfs.c fs/ || true
+        patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
 
-        # KVM Virtualization Configs
-        echo "CONFIG_VIRTUALIZATION=y" >> $DEFCONFIG
-        echo "CONFIG_KVM=y" >> $DEFCONFIG
-        echo "CONFIG_KVM_ARM_HOST=y" >> $DEFCONFIG
-        echo "CONFIG_TUN=y" >> $DEFCONFIG
-        echo "CONFIG_VHOST_NET=y" >> $DEFCONFIG
+    - name: Configure Kernel Options
+      run: |
+        cd kernel
+        make earth_defconfig
+        
+        # Gunakan scripts/config bawaan kernel untuk mengaktifkan config secara aman
+        ./scripts/config --enable CONFIG_VIRTUALIZATION
+        ./scripts/config --enable CONFIG_KVM
+        ./scripts/config --enable CONFIG_KVM_ARM_HOST
+        ./scripts/config --enable CONFIG_TUN
+        ./scripts/config --enable CONFIG_VHOST_NET
 
-        # ResuKisu / KernelSU Configs
-        echo "CONFIG_KSU=y" >> $DEFCONFIG
-        echo "CONFIG_KSU_TAMPER_SYS_CALLS=y" >> $DEFCONFIG
+        # ResuKisu / KernelSU
+        ./scripts/config --enable CONFIG_KSU
+        ./scripts/config --enable CONFIG_KSU_TAMPER_SYS_CALLS
 
         # SUSFS Configs
-        echo "CONFIG_SUSFS=y" >> $DEFCONFIG
-        echo "CONFIG_SUSFS_SHOW_MOUNT=y" >> $DEFCONFIG
-        echo "CONFIG_SUSFS_HAS_SU=y" >> $DEFCONFIG
-        echo "CONFIG_SUSFS_SUS_PATH=y" >> $DEFCONFIG
-        echo "CONFIG_SUSFS_SUS_MOUNT=y" >> $DEFCONFIG
-        echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSUM=y" >> $DEFCONFIG
+        ./scripts/config --enable CONFIG_SUSFS
+        ./scripts/config --enable CONFIG_SUSFS_SHOW_MOUNT
+        ./scripts/config --enable CONFIG_SUSFS_HAS_SU
+        ./scripts/config --enable CONFIG_SUSFS_SUS_PATH
+        ./scripts/config --enable CONFIG_SUSFS_SUS_MOUNT
+        ./scripts/config --enable CONFIG_SUSFS_AUTO_ADD_SUS_KSUM
 
     - name: Compile Kernel
       run: |
@@ -69,8 +70,7 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
         
-        make O=out earth_defconfig
-        make -j$(nproc) O=out \
+        make -j$(nproc) \
           CC=clang \
           CLANG_TRIPLE=aarch64-linux-gnu- \
           CROSS_COMPILE=aarch64-linux-android- \
@@ -79,7 +79,16 @@ jobs:
     - name: Pack Kernel with AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-        cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        
+        # Cari file biner kernel hasil kompilasi
+        if [ -f kernel/arch/arm64/boot/Image.gz-dtb ]; then
+          cp kernel/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        elif [ -f kernel/arch/arm64/boot/Image.gz ]; then
+          cp kernel/arch/arm64/boot/Image.gz AnyKernel3/
+        elif [ -f kernel/arch/arm64/boot/Image ]; then
+          cp kernel/arch/arm64/boot/Image AnyKernel3/
+        fi
+
         cd AnyKernel3
         zip -r9 CustomKernel_Redmi12C_A16_KVM_SUSFS.zip * -x .git README.md
 
