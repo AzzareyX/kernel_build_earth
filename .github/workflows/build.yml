@@ -1,0 +1,90 @@
+name: Build Redmi 12C Android 16 Kernel (KVM + ResuKisu + SUSFS)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git ccache bison flex libssl-dev libncurses5-dev libncursesw5-dev zlib1g-dev u-boot-tools device-tree-compiler bc libelf-dev zip lz4 tar liblz4-tool llvm clang lld
+
+    - name: Clone Kernel Source & Toolchain
+      run: |
+        # Clone Kernel LineageOS Redmi 12C (Auto-fetch branch lineage-23.0/23.2/android-16 atau fallback ke main)
+        git clone https://github.com/aosp-earth/android_kernel_xiaomi_earth.git --depth=1 kernel
+        cd kernel
+
+        # Clone Proton-Clang Toolchain
+        git clone https://github.com/kdrag0n/proton-clang.git --depth=1 ../clang
+
+    - name: Integrate ResuKisu & SUSFS
+      run: |
+        cd kernel
+
+        # Integrate ResuKisu / KernelSU
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+
+        # Integrate SUSFS (Kernel 4.19)
+        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs
+        cp ../susfs/kernel_patches/include/linux/susfs.h include/linux/
+        cp ../susfs/kernel_patches/fs/susfs.c fs/
+        patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
+
+    - name: Apply Configs (KVM, KSU, SUSFS)
+      run: |
+        cd kernel
+        DEFCONFIG="arch/arm64/configs/earth_defconfig"
+
+        # KVM Virtualization Configs
+        echo "CONFIG_VIRTUALIZATION=y" >> $DEFCONFIG
+        echo "CONFIG_KVM=y" >> $DEFCONFIG
+        echo "CONFIG_KVM_ARM_HOST=y" >> $DEFCONFIG
+        echo "CONFIG_TUN=y" >> $DEFCONFIG
+        echo "CONFIG_VHOST_NET=y" >> $DEFCONFIG
+
+        # ResuKisu / KernelSU Configs
+        echo "CONFIG_KSU=y" >> $DEFCONFIG
+        echo "CONFIG_KSU_TAMPER_SYS_CALLS=y" >> $DEFCONFIG
+
+        # SUSFS Configs
+        echo "CONFIG_SUSFS=y" >> $DEFCONFIG
+        echo "CONFIG_SUSFS_SHOW_MOUNT=y" >> $DEFCONFIG
+        echo "CONFIG_SUSFS_HAS_SU=y" >> $DEFCONFIG
+        echo "CONFIG_SUSFS_SUS_PATH=y" >> $DEFCONFIG
+        echo "CONFIG_SUSFS_SUS_MOUNT=y" >> $DEFCONFIG
+        echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSUM=y" >> $DEFCONFIG
+
+    - name: Compile Kernel
+      run: |
+        cd kernel
+        export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+        export ARCH=arm64
+        export SUBARCH=arm64
+        
+        make O=out earth_defconfig
+        make -j$(nproc) O=out \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-android- \
+          CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+    - name: Pack Kernel with AnyKernel3
+      run: |
+        git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+        cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        cd AnyKernel3
+        zip -r9 CustomKernel_Redmi12C_A16_KVM_SUSFS.zip * -x .git README.md
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Redmi12C-A16-CustomKernel
+        path: AnyKernel3/CustomKernel_Redmi12C_A16_KVM_SUSFS.zip
