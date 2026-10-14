@@ -48,7 +48,7 @@ jobs:
           # Konfigurasi defconfig untuk Redmi 12C (earth)
           make O=out ARCH=arm64 earth_defconfig
           
-          # Mulai proses kompilasi menggunakan LLVM full flags
+          # Mulai proses kompilasi target Image.gz
           make -j$(nproc) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -60,15 +60,16 @@ jobs:
             STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image.gz
 
       - name: Package Kernel with AnyKernel3
         run: |
           # Clone AnyKernel3
           git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/osm0sis/AnyKernel3.git anykernel
           
-          # Salin file hasil kompilasi kernel
-          cp kernel/out/arch/arm64/boot/Image anykernel/
+          # Salin file Image.gz hasil kompilasi
+          cp kernel/out/arch/arm64/boot/Image.gz anykernel/
           
           if [ -f kernel/out/arch/arm64/boot/dtb.img ]; then
             cp kernel/out/arch/arm64/boot/dtb.img anykernel/
