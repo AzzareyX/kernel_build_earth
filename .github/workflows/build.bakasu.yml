@@ -41,7 +41,6 @@ jobs:
           echo "==> Cloning BakaSU..."
           git clone --depth=1 https://github.com/Baka-SU/BakaSU.git drivers/kernelsu
           
-          # Inject BakaSU to drivers/Kconfig and drivers/Makefile if not present
           if ! grep -q "drivers/kernelsu" drivers/Kconfig; then
             echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           fi
@@ -49,17 +48,36 @@ jobs:
             echo 'obj-y += kernelsu/' >> drivers/Makefile
           fi
 
-          # 2. Integrate SUSFS Patches (Kernel 4.19 Inline Hook)
+          # 2. Integrate SUSFS Patches
           echo "==> Cloning SUSFS Patches..."
-          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 susfs_src
+          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git susfs_src
           
-          echo "==> Copying SUSFS files to kernel tree..."
-          cp -r susfs_src/kernel_patches/fs/susfs fs/
-          cp susfs_src/kernel_patches/include/linux/susfs.h include/linux/
+          echo "==> Locating and copying SUSFS files dynamically..."
+          SUSFS_DIR=$(find susfs_src -type d -name "susfs" | grep -v ".git" | head -n 1)
+          if [ -d "$SUSFS_DIR" ]; then
+            cp -r "$SUSFS_DIR" fs/
+            echo "Successfully copied susfs folder from $SUSFS_DIR"
+          else
+            echo "Error: susfs directory not found!"
+            exit 1
+          fi
           
-          # Apply Inline Hook patches
-          echo "==> Applying SUSFS kernel patches..."
-          patch -p1 < susfs_src/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
+          SUSFS_H=$(find susfs_src -type f -name "susfs.h" | grep -v ".git" | head -n 1)
+          if [ -f "$SUSFS_H" ]; then
+            cp "$SUSFS_H" include/linux/
+            echo "Successfully copied susfs.h from $SUSFS_H"
+          else
+            echo "Error: susfs.h not found!"
+            exit 1
+          fi
+          
+          PATCH_FILE=$(find susfs_src -name "*.patch" | head -n 1)
+          if [ -n "$PATCH_FILE" ]; then
+            echo "==> Applying patch: $PATCH_FILE"
+            patch -p1 < "$PATCH_FILE" || true
+          else
+            echo "Warning: No patch file found, skipping patch step."
+          fi
 
       - name: Setup Clang Toolchain (AOSP Clang Stable)
         run: |
@@ -72,10 +90,8 @@ jobs:
           CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
           export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
           
-          # Generate base defconfig
           make O=out ARCH=arm64 earth_defconfig
           
-          # Enable BakaSU and SUSFS Inline Hook configurations
           cat << 'EOF' >> out/.config
           CONFIG_KSU=y
           CONFIG_KSU_SUSFS=y
@@ -87,7 +103,6 @@ jobs:
           CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
           EOF
           
-          # Re-align config dependencies
           make O=out ARCH=arm64 CC=clang LD=ld.lld olddefconfig
 
       - name: Compile Kernel
