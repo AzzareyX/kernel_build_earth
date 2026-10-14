@@ -1,0 +1,168 @@
+name: Build Redmi 12C Kernel (LineageOS 23.2 - BakaSU & SUSFS Inline Hook)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - lineage-23.2
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang lld llvm \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            build-essential libncurses5-dev bison flex libssl-dev bc dwarves \
+            libelf-dev libyaml-dev zip unzip python3 git patch
+
+      - name: Setup Git Identity
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Clone Kernel Source (LineageOS 23.2)
+        run: |
+          git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
+
+      - name: Setup BakaSU & SUSFS (Inline Hook)
+        run: |
+          cd kernel
+          
+          # 1. Integrate BakaSU
+          echo "==> Cloning BakaSU..."
+          git clone --depth=1 https://github.com/Baka-SU/BakaSU.git drivers/kernelsu
+          
+          # Inject BakaSU to drivers/Kconfig and drivers/Makefile if not present
+          if ! grep -q "drivers/kernelsu" drivers/Kconfig; then
+            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          fi
+          if ! grep -q "kernelsu" drivers/Makefile; then
+            echo 'obj-y += kernelsu/' >> drivers/Makefile
+          fi
+
+          # 2. Integrate SUSFS Patches (Kernel 4.19 Inline Hook)
+          echo "==> Cloning SUSFS Patches..."
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 susfs_src
+          
+          echo "==> Copying SUSFS files to kernel tree..."
+          cp -r susfs_src/kernel_patches/fs/susfs fs/
+          cp susfs_src/kernel_patches/include/linux/susfs.h include/linux/
+          
+          # Apply Inline Hook patches
+          echo "==> Applying SUSFS kernel patches..."
+          patch -p1 < susfs_src/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
+
+      - name: Setup Clang Toolchain (AOSP Clang Stable)
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android-14.0.0_r1 target-clang
+
+      - name: Configure Defconfig & Enable BakaSU + SUSFS Inline Hook
+        run: |
+          cd kernel
+          
+          CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
+          export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
+          
+          # Generate base defconfig
+          make O=out ARCH=arm64 earth_defconfig
+          
+          # Enable BakaSU and SUSFS Inline Hook configurations
+          cat << 'EOF' >> out/.config
+          CONFIG_KSU=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_OPEN=y
+          CONFIG_KSU_SUSFS_SUS_SU=y
+          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+          EOF
+          
+          # Re-align config dependencies
+          make O=out ARCH=arm64 CC=clang LD=ld.lld olddefconfig
+
+      - name: Compile Kernel
+        run: |
+          cd kernel
+          
+          CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
+          export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
+          
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image.gz
+
+      - name: Package Kernel with AnyKernel3
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/osm0sis/AnyKernel3.git anykernel
+          
+          cp kernel/out/arch/arm64/boot/Image.gz anykernel/
+          
+          if [ -f kernel/out/arch/arm64/boot/dtb.img ]; then
+            cp kernel/out/arch/arm64/boot/dtb.img anykernel/
+          fi
+          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
+            cp kernel/out/arch/arm64/boot/dtbo.img anykernel/
+          fi
+          
+          cd anykernel
+          cat << 'EOF' > anykernel.sh
+          ### AnyKernel3 Ramdisk Mod Script
+          ## osm0sis @ xda-developers
+
+          ### AnyKernel setup
+          properties() { '
+          kernel.string=Redmi 12C Lineage 23.2 (BakaSU + SUSFS Inline)
+          do.devicecheck=1
+          device.name1=earth
+          device.name2=aether
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          supported.versions=
+          supported.patchlevels=
+          '; } # end properties
+
+          boot_attributes() {
+          set_perm_recursive 0 0 755 644 $RAMDISK/*;
+          set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+          }
+
+          BLOCK=/dev/block/by-name/boot;
+          IS_SLOT_DEVICE=1;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
+
+          . tools/ak3-core.sh;
+
+          dump_boot;
+          write_boot;
+          EOF
+          
+          zip -r9 ../Redmi12C-Kernel-Lineage23.2-BakaSU-SUSFS.zip *
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Redmi12C-Kernel-Lineage23.2-BakaSU-SUSFS
+          path: Redmi12C-Kernel-Lineage23.2-BakaSU-SUSFS.zip
