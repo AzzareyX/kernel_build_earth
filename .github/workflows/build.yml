@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            clang-17 lld-17 llvm-17 \
+            clang lld llvm \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             build-essential libncurses5-dev bison flex libssl-dev bc dwarves \
             libelf-dev libyaml-dev zip unzip python3 git
@@ -41,7 +41,7 @@ jobs:
         run: |
           cd kernel
           
-          # Tentukan path Clang toolchain
+          # Tentukan path Clang toolchain bawaan AOSP
           CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
           export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
           
@@ -58,13 +58,13 @@ jobs:
 
       - name: Package Kernel with AnyKernel3
         run: |
-          # Clone template AnyKernel3 khusus MediaTek / Redmi 12C
+          # Clone template AnyKernel3
           git clone --depth=1 https://github.com/Kernel-Builders/AnyKernel3.git -b master anykernel
           
-          # Salin file hasil kompilasi kernel ke folder AnyKernel3
+          # Salin file hasil kompilasi kernel
           cp kernel/out/arch/arm64/boot/Image anykernel/
           
-          # Salin dtb / dtbo jika dihasilkan saat build
+          # Salin dtb / dtbo jika ada
           if [ -f kernel/out/arch/arm64/boot/dtb.img ]; then
             cp kernel/out/arch/arm64/boot/dtb.img anykernel/
           fi
@@ -72,7 +72,7 @@ jobs:
             cp kernel/out/arch/arm64/boot/dtbo.img anykernel/
           fi
           
-          # Buat archive flashable ZIP
+          # Buat archive ZIP
           cd anykernel
           zip -r9 ../Redmi12C-Kernel-Lineage23.2-Vanilla.zip *
 
