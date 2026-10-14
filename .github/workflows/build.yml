@@ -1,86 +1,83 @@
-name: Build Redmi 12C Kernel (Latest Toolchain)
+name: Build Redmi 12C Kernel (LineageOS 23.2 - Vanilla)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - lineage-23.2
 
 jobs:
   build-kernel:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Workflow Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@v10
-        with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-
-      - name: Install Dependencies
+      - name: Setup Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git ccache python3 bc bison flex libssl-dev libdevmapper-dev \
-            libelf-dev build-essential zip curl make libncurses-dev \
-            lz4 libzstd-dev
+            clang-17 lld-17 llvm-17 \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            build-essential libncurses5-dev bison flex libssl-dev bc dwarves \
+            libelf-dev libyaml-dev zip unzip python3 git
 
-      - name: Clone Kernel Source
+      - name: Setup Git Identity
         run: |
-          git clone --depth=1 -b lineage-23.2 https://github.com/LineageOS/android_kernel_xiaomi_earth.git kernel
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
 
-      - name: Clone Latest Toolchains
+      - name: Clone Kernel Source (LineageOS 23.2)
         run: |
-          mkdir toolchains && cd toolchains
-          
-          # AOSP Clang 18 (r522817) dari GitHub Mirror
-          git clone --depth=1 https://github.com/ZyCronite/clang-r522817.git clang
-          
-          # GCC Cross-Compiler (LineageOS Prebuilts)
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git -b lineage-19.1 gcc64
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git -b lineage-19.1 gcc32
+          git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Build Kernel
+      - name: Setup Clang Toolchain (AOSP Clang)
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b main-ui target-clang
+
+      - name: Compile Kernel
         run: |
           cd kernel
           
-          # Setup Path & Env
-          export PATH=$(pwd)/../toolchains/clang/bin:$(pwd)/../toolchains/gcc64/bin:$(pwd)/../toolchains/gcc32/bin:$PATH
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CC=clang
-          export CROSS_COMPILE=aarch64-linux-android-
-          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export LLVM=1
-          export LLVM_IAS=1
-
-          # Direktori Output
-          mkdir -p out
-
-          # Generate Config & Build
-          make O=out earth_defconfig
-          make -j$(nproc --all) O=out
-
-      - name: Prepare Artifacts
-        run: |
-          cd kernel/out/arch/arm64/boot
-          mkdir -p ~/artifact
+          # Tentukan path Clang toolchain
+          CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
+          export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
           
-          if [ -f Image.gz-dtb ]; then cp Image.gz-dtb ~/artifact/;
-          elif [ -f Image.gz ]; then cp Image.gz ~/artifact/;
-          elif [ -f Image ]; then cp Image ~/artifact/;
+          # Konfigurasi defconfig untuk Redmi 12C (earth)
+          make O=out ARCH=arm64 earth_defconfig
+          
+          # Mulai proses kompilasi
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+      - name: Package Kernel with AnyKernel3
+        run: |
+          # Clone template AnyKernel3 khusus MediaTek / Redmi 12C
+          git clone --depth=1 https://github.com/Kernel-Builders/AnyKernel3.git -b master anykernel
+          
+          # Salin file hasil kompilasi kernel ke folder AnyKernel3
+          cp kernel/out/arch/arm64/boot/Image anykernel/
+          
+          # Salin dtb / dtbo jika dihasilkan saat build
+          if [ -f kernel/out/arch/arm64/boot/dtb.img ]; then
+            cp kernel/out/arch/arm64/boot/dtb.img anykernel/
           fi
+          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
+            cp kernel/out/arch/arm64/boot/dtbo.img anykernel/
+          fi
+          
+          # Buat archive flashable ZIP
+          cd anykernel
+          zip -r9 ../Redmi12C-Kernel-Lineage23.2-Vanilla.zip *
 
-          if [ -f dtbo.img ]; then cp dtbo.img ~/artifact/; fi
-          if [ -f dtb.img ]; then cp dtb.img ~/artifact/; fi
-
-      - name: Upload Kernel Artifact
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Redmi12C-Kernel-Latest-Toolchain
-          path: ~/artifact/*
+          name: Redmi12C-Kernel-Lineage23.2-Vanilla
+          path: Redmi12C-Kernel-Lineage23.2-Vanilla.zip
