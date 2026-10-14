@@ -1,4 +1,4 @@
-name: Build Redmi 12C Kernel (LineageOS 23.2 - BakaSU & SUSFS Inline Hook)
+Name: Build Redmi 12C Kernel (LineageOS 23.2 - BakaSU & SUSFS Inline Hook)
 
 on:
   workflow_dispatch:
@@ -70,7 +70,7 @@ jobs:
             echo 'obj-y += kernelsu/' >> drivers/Makefile
           fi
 
-          # 2. Integrate SUSFS Patches with Explicit Validation
+          # 2. Integrate SUSFS Patches with Strict Validation
           echo "==> Downloading SUSFS Patches..."
           mkdir -p susfs_src
           
@@ -108,15 +108,19 @@ jobs:
             exit 1
           fi
           
+          # [DIUBAH DI SINI] Pengecekan patch ketat: Jika gagal, langsung hentikan build (exit 1)
           PATCH_FILE=$(find susfs_src -name "*.patch" | head -n 1)
           if [ -n "$PATCH_FILE" ]; then
             echo "==> Applying patch: $PATCH_FILE"
-            patch -p1 --forward < "$PATCH_FILE" || {
-              echo "Warning: Some hunks failed to apply cleanly. Checking for rejected files..."
-              find . -name "*.rej"
-            }
+            if ! patch -p1 --forward < "$PATCH_FILE"; then
+              echo "Error: Patch failed to apply cleanly! Halting build."
+              echo "=== REJECTED FILES CONTENT ==="
+              find . -name "*.rej" -exec cat {} +
+              exit 1
+            fi
           else
-            echo "Warning: No patch file found, skipping patch step."
+            echo "Error: No patch file found, cannot proceed without SUSFS patch!"
+            exit 1
           fi
 
       - name: Setup Clang Toolchain (AOSP Clang Stable)
