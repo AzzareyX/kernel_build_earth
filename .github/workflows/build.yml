@@ -78,13 +78,19 @@ jobs:
             cp kernel/out/arch/arm64/boot/dtbo.img anykernel/
           fi
           
-          # Kustomisasi anykernel.sh agar mendukung Redmi 12C (earth)
+          # Kustomisasi anykernel.sh untuk Redmi 12C (earth & partisi MediaTek)
           cd anykernel
+          
+          # Set identitas perangkat
           sed -i 's/device.name1=/device.name1=earth/g' anykernel.sh
           sed -i 's/device.name2=/device.name2=earth_p/g' anykernel.sh
           sed -i 's/device.name3=/device.name3=22120RN86G/g' anykernel.sh
           sed -i 's/device.name4=/device.name4=22120RN86I/g' anykernel.sh
           sed -i 's/device.name5=/device.name5=22120RN86C/g' anykernel.sh
+          
+          # Set lokasi partisi boot untuk MediaTek / A/B & Virtual A/B
+          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|block=auto;|g' anykernel.sh
+          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' anykernel.sh
           
           # Buat archive ZIP
           zip -r9 ../Redmi12C-Kernel-Lineage23.2-Vanilla.zip *
