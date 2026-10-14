@@ -33,7 +33,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Setup BakaSU & SUSFS (Inline Hook with Full Header Copy)
+      - name: Setup BakaSU & SUSFS (Inline Hook with Explicit Makefile Injection)
         run: |
           cd kernel
           
@@ -70,7 +70,7 @@ jobs:
             echo 'obj-y += kernelsu/' >> drivers/Makefile
           fi
 
-          # 2. Integrate SUSFS Patches with Multi-Mirror & Zip Fallback
+          # 2. Integrate SUSFS Patches with Explicit Validation
           echo "==> Downloading SUSFS Patches..."
           mkdir -p susfs_src
           
@@ -95,7 +95,11 @@ jobs:
             mkdir -p fs/susfs
             cp -r "$SUSFS_DIR"/* fs/susfs/
             
-            # Salin SEMUA file header (.h) yang ada di repo susfs ke include/linux/ agar tidak ada yang kurang
+            if ! grep -q "susfs/" fs/Makefile; then
+              echo 'obj-y += susfs/' >> fs/Makefile
+              echo "Added obj-y += susfs/ to fs/Makefile"
+            fi
+            
             find susfs_src -name "*.h" -exec cp {} include/linux/ \;
             echo "Successfully copied all SUSFS headers to include/linux/!"
           else
@@ -107,7 +111,10 @@ jobs:
           PATCH_FILE=$(find susfs_src -name "*.patch" | head -n 1)
           if [ -n "$PATCH_FILE" ]; then
             echo "==> Applying patch: $PATCH_FILE"
-            patch -p1 < "$PATCH_FILE" || true
+            patch -p1 --forward < "$PATCH_FILE" || {
+              echo "Warning: Some hunks failed to apply cleanly. Checking for rejected files..."
+              find . -name "*.rej"
+            }
           else
             echo "Warning: No patch file found, skipping patch step."
           fi
