@@ -33,15 +33,15 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Setup Clang Toolchain (AOSP Clang)
+      - name: Setup Clang Toolchain (AOSP Clang Stable)
         run: |
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b main-ui target-clang
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android-14.0.0_r1 target-clang
 
       - name: Compile Kernel
         run: |
           cd kernel
           
-          # Tentukan path Clang toolchain bawaan AOSP
+          # Tentukan path Clang toolchain
           CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
           export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
           
@@ -58,13 +58,10 @@ jobs:
 
       - name: Package Kernel with AnyKernel3
         run: |
-          # Clone template AnyKernel3
           git clone --depth=1 https://github.com/Kernel-Builders/AnyKernel3.git -b master anykernel
           
-          # Salin file hasil kompilasi kernel
           cp kernel/out/arch/arm64/boot/Image anykernel/
           
-          # Salin dtb / dtbo jika ada
           if [ -f kernel/out/arch/arm64/boot/dtb.img ]; then
             cp kernel/out/arch/arm64/boot/dtb.img anykernel/
           fi
@@ -72,7 +69,6 @@ jobs:
             cp kernel/out/arch/arm64/boot/dtbo.img anykernel/
           fi
           
-          # Buat archive ZIP
           cd anykernel
           zip -r9 ../Redmi12C-Kernel-Lineage23.2-Vanilla.zip *
 
