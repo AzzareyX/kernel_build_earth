@@ -33,7 +33,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Setup BakaSU & SUSFS (Inline Hook with Fallback)
+      - name: Setup BakaSU & SUSFS (Inline Hook with Smart Path Resolution)
         run: |
           cd kernel
           
@@ -64,24 +64,24 @@ jobs:
           }
           
           echo "==> Locating and copying SUSFS files dynamically..."
-          SUSFS_DIR=$(find susfs_src -type d -name "susfs" | grep -v ".git" | head -n 1)
-          if [ -d "$SUSFS_DIR" ]; then
-            cp -r "$SUSFS_DIR" fs/
-            echo "Successfully copied susfs folder from $SUSFS_DIR"
-          else
-            echo "Error: susfs directory not found!"
-            exit 1
-          fi
-          
+          # Cari letak file susfs.h secara otomatis untuk menentukan folder sumbernya
           SUSFS_H=$(find susfs_src -type f -name "susfs.h" | grep -v ".git" | head -n 1)
+          
           if [ -f "$SUSFS_H" ]; then
+            SUSFS_DIR=$(dirname "$SUSFS_H")
+            echo "Found susfs source directory at: $SUSFS_DIR"
+            
+            mkdir -p fs/susfs
+            cp -r "$SUSFS_DIR"/* fs/susfs/
             cp "$SUSFS_H" include/linux/
-            echo "Successfully copied susfs.h from $SUSFS_H"
+            echo "Successfully copied SUSFS files and header!"
           else
-            echo "Error: susfs.h not found!"
+            echo "Error: susfs.h not found anywhere in susfs_src!"
+            find susfs_src -maxdepth 3
             exit 1
           fi
           
+          # Cari dan terapkan file patch secara otomatis
           PATCH_FILE=$(find susfs_src -name "*.patch" | head -n 1)
           if [ -n "$PATCH_FILE" ]; then
             echo "==> Applying patch: $PATCH_FILE"
