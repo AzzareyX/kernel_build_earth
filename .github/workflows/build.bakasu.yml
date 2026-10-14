@@ -22,7 +22,7 @@ jobs:
             clang lld llvm \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             build-essential libncurses5-dev bison flex libssl-dev bc dwarves \
-            libelf-dev libyaml-dev zip unzip python3 git patch
+            libelf-dev libyaml-dev zip unzip python3 git patch curl
 
       - name: Setup Git Identity
         run: |
@@ -33,7 +33,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Setup BakaSU & SUSFS (Inline Hook)
+      - name: Setup BakaSU & SUSFS (Inline Hook with Fallback)
         run: |
           cd kernel
           
@@ -48,9 +48,20 @@ jobs:
             echo 'obj-y += kernelsu/' >> drivers/Makefile
           fi
 
-          # 2. Integrate SUSFS Patches
-          echo "==> Cloning SUSFS Patches..."
-          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git susfs_src
+          # 2. Integrate SUSFS Patches with Multi-Mirror & Zip Fallback
+          echo "==> Downloading SUSFS Patches..."
+          mkdir -p susfs_src
+          
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 susfs_src 2>/dev/null || \
+          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git susfs_src 2>/dev/null || \
+          {
+            echo "Git clone failed, downloading archive via curl..."
+            curl -L -o susfs.zip https://gitlab.com/simonpunk/susfs4ksu/-/archive/kernel-4.19/susfs4ksu-kernel-4.19.zip || \
+            curl -L -o susfs.zip https://github.com/simonpunk/susfs4ksu/archive/refs/heads/kernel-4.19.zip
+            unzip -q susfs.zip
+            rm -rf susfs_src
+            mv susfs4ksu-* susfs_src
+          }
           
           echo "==> Locating and copying SUSFS files dynamically..."
           SUSFS_DIR=$(find susfs_src -type d -name "susfs" | grep -v ".git" | head -n 1)
