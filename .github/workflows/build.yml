@@ -48,7 +48,7 @@ jobs:
           # Konfigurasi defconfig untuk Redmi 12C (earth)
           make O=out ARCH=arm64 earth_defconfig
           
-          # Mulai proses kompilasi menggunakan LLVM full flags agar bersih dari warning objdump
+          # Mulai proses kompilasi menggunakan LLVM full flags
           make -j$(nproc) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -64,10 +64,8 @@ jobs:
 
       - name: Package Kernel with AnyKernel3
         run: |
-          # Unduh AnyKernel3 menggunakan curl untuk menghindari error git authentication
-          curl -L -o anykernel.zip https://github.com/Kernel-Builders/AnyKernel3/archive/refs/heads/master.zip
-          unzip anykernel.zip
-          mv AnyKernel3-master anykernel
+          # Clone AnyKernel3 menggunakan token GitHub Actions resmi agar tidak meminta autentikasi
+          git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/osm0sis/AnyKernel3.git anykernel
           
           # Salin file hasil kompilasi kernel
           cp kernel/out/arch/arm64/boot/Image anykernel/
