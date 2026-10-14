@@ -33,11 +33,11 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Setup BakaSU & SUSFS (Inline Hook with Dynamic Structure Fix)
+      - name: Setup BakaSU & SUSFS (Inline Hook with Full Header Copy)
         run: |
           cd kernel
           
-          # 1. Integrate BakaSU with Dynamic Kconfig/Makefile Resolution
+          # 1. Integrate BakaSU
           echo "==> Cloning BakaSU..."
           rm -rf drivers/kernelsu
           git clone --depth=1 https://github.com/Baka-SU/BakaSU.git drivers/kernelsu
@@ -47,7 +47,6 @@ jobs:
             FOUND_KCONFIG=$(find drivers/kernelsu -maxdepth 2 -name "Kconfig" | head -n 1)
             if [ -n "$FOUND_KCONFIG" ]; then
               cp "$FOUND_KCONFIG" drivers/kernelsu/Kconfig
-              echo "Copied Kconfig from $FOUND_KCONFIG"
             else
               echo 'config KSU' > drivers/kernelsu/Kconfig
               echo '    tristate "KernelSU"' >> drivers/kernelsu/Kconfig
@@ -59,7 +58,6 @@ jobs:
             FOUND_MAKEFILE=$(find drivers/kernelsu -maxdepth 2 -name "Makefile" | head -n 1)
             if [ -n "$FOUND_MAKEFILE" ]; then
               cp "$FOUND_MAKEFILE" drivers/kernelsu/Makefile
-              echo "Copied Makefile from $FOUND_MAKEFILE"
             else
               echo 'obj-y += android.o' > drivers/kernelsu/Makefile
             fi
@@ -87,7 +85,7 @@ jobs:
             mv susfs4ksu-* susfs_src
           }
           
-          echo "==> Locating and copying SUSFS files dynamically..."
+          echo "==> Locating and copying SUSFS source files & all headers..."
           SUSFS_H=$(find susfs_src -type f -name "susfs.h" | grep -v ".git" | head -n 1)
           
           if [ -f "$SUSFS_H" ]; then
@@ -96,8 +94,10 @@ jobs:
             
             mkdir -p fs/susfs
             cp -r "$SUSFS_DIR"/* fs/susfs/
-            cp "$SUSFS_H" include/linux/
-            echo "Successfully copied SUSFS files and header!"
+            
+            # Salin SEMUA file header (.h) yang ada di repo susfs ke include/linux/ agar tidak ada yang kurang
+            find susfs_src -name "*.h" -exec cp {} include/linux/ \;
+            echo "Successfully copied all SUSFS headers to include/linux/!"
           else
             echo "Error: susfs.h not found anywhere in susfs_src!"
             find susfs_src -maxdepth 3
