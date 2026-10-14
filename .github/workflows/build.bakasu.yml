@@ -33,13 +33,29 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_earth.git -b lineage-23.2 kernel
 
-      - name: Setup BakaSU & SUSFS (Inline Hook with Smart Path Resolution)
+      - name: Setup BakaSU & SUSFS (Inline Hook with Smart Resolution)
         run: |
           cd kernel
           
-          # 1. Integrate BakaSU
+          # 1. Integrate BakaSU with Safe Kconfig Check
           echo "==> Cloning BakaSU..."
           git clone --depth=1 https://github.com/Baka-SU/BakaSU.git drivers/kernelsu
+          
+          if [ ! -f "drivers/kernelsu/Kconfig" ]; then
+            echo "Searching for Kconfig inside drivers/kernelsu..."
+            FOUND_KCONFIG=$(find drivers/kernelsu -maxdepth 2 -name "Kconfig" | head -n 1)
+            if [ -f "$FOUND_KCONFIG" ]; then
+              cp "$FOUND_KCONFIG" drivers/kernelsu/Kconfig
+              echo "Copied Kconfig to drivers/kernelsu/Kconfig"
+            else
+              echo "Creating fallback drivers/kernelsu/Kconfig..."
+              cat << 'EOF' > drivers/kernelsu/Kconfig
+config KSU
+	bool "KernelSU support"
+	default y
+EOF
+            fi
+          fi
           
           if ! grep -q "drivers/kernelsu" drivers/Kconfig; then
             echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
@@ -64,7 +80,6 @@ jobs:
           }
           
           echo "==> Locating and copying SUSFS files dynamically..."
-          # Cari letak file susfs.h secara otomatis untuk menentukan folder sumbernya
           SUSFS_H=$(find susfs_src -type f -name "susfs.h" | grep -v ".git" | head -n 1)
           
           if [ -f "$SUSFS_H" ]; then
@@ -81,7 +96,6 @@ jobs:
             exit 1
           fi
           
-          # Cari dan terapkan file patch secara otomatis
           PATCH_FILE=$(find susfs_src -name "*.patch" | head -n 1)
           if [ -n "$PATCH_FILE" ]; then
             echo "==> Applying patch: $PATCH_FILE"
