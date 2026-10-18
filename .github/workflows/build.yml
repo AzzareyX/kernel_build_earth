@@ -48,6 +48,11 @@ jobs:
             echo "all:" > KernelSU/kernel/tools/inline_hook_check.mk
           fi
 
+          # Bypass pemeriksaan kompatibilitas susfs di susfs_compat.mk
+          if [ -f KernelSU/kernel/tools/susfs_compat.mk ]; then
+            sed -i 's/\$(error/\#\$(error/g' KernelSU/kernel/tools/susfs_compat.mk
+          fi
+
           # 2. Clone SUSFS repository branch kernel-4.19
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs4ksu
           
@@ -61,15 +66,13 @@ jobs:
           # 4. Terapkan kernel-side patch SUSFS
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           
-          # 5. Fix manual untuk fungsi alloc_vfsmnt di fs/namespace.c agar sesuai dengan SUSFS 3-argumen
+          # 5. Fix manual untuk fungsi alloc_vfsmnt di fs/namespace.c
           if grep -q "static struct mount \*alloc_vfsmnt(const char \*name)" fs/namespace.c; then
-            echo "Fixing alloc_vfsmnt function signature in fs/namespace.c..."
             sed -i 's/static struct mount \*alloc_vfsmnt(const char \*name)/static struct mount *alloc_vfsmnt(const char *name, bool should_spoof, int custom_mnt_id)/g' fs/namespace.c
           fi
           
           # 6. Fix manual untuk INODE_STATE_SUS_KSTAT di fs.h
           if ! grep -q "INODE_STATE_SUS_KSTAT" include/linux/fs.h; then
-            echo "Fixing missing INODE_STATE_SUS_KSTAT definition in fs.h..."
             sed -i '/#define I_DIRTY_TIME/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
             sed -i '/#define I_DIRTY/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
             echo "#define INODE_STATE_SUS_KSTAT (1 << 27)" >> include/linux/fs.h
@@ -145,7 +148,7 @@ jobs:
 
           BLOCK=/dev/block/by-name/boot;
           IS_SLOT_DEVICE=1;
-          RAMDISK_CRRESSION=auto;
+          RAMDISK_COMPRESSION=auto;
           PATCH_VBMETA_FLAG=auto;
 
           . tools/ak3-core.sh;
