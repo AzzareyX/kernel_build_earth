@@ -43,9 +43,8 @@ jobs:
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
           
-          # Bypass pemeriksaan inline hook BakaSU yang menyebabkan error pada Non-GKI 4.19
+          # Bypass pemeriksaan inline hook BakaSU untuk Non-GKI 4.19
           if [ -f KernelSU/kernel/tools/inline_hook_check.mk ]; then
-            echo "Bypassing BakaSU strict inline hook check for Non-GKI 4.19..."
             echo "all:" > KernelSU/kernel/tools/inline_hook_check.mk
           fi
 
@@ -59,8 +58,12 @@ jobs:
             cp -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
           fi
           
-          # 4. Terapkan kernel-side patch dari SUSFS
-          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
+          # 4. Terapkan kernel-side patch SUSFS secara ketat tanpa mengabaikannya
+          patch -p1 --forward < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || {
+            echo "Patching failed! Checking .rej files for debugging..."
+            find . -name "*.rej" -exec cat {} \;
+            exit 1
+          }
           
           # 5. Fix manual untuk INODE_STATE_SUS_KSTAT di fs.h
           if ! grep -q "INODE_STATE_SUS_KSTAT" include/linux/fs.h; then
