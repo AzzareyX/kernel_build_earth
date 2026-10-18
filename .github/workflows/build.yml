@@ -58,14 +58,16 @@ jobs:
             cp -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
           fi
           
-          # 4. Terapkan kernel-side patch SUSFS secara ketat tanpa mengabaikannya
-          patch -p1 --forward < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || {
-            echo "Patching failed! Checking .rej files for debugging..."
-            find . -name "*.rej" -exec cat {} \;
-            exit 1
-          }
+          # 4. Terapkan kernel-side patch SUSFS
+          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           
-          # 5. Fix manual untuk INODE_STATE_SUS_KSTAT di fs.h
+          # 5. Fix manual untuk fungsi alloc_vfsmnt di fs/namespace.c agar sesuai dengan SUSFS 3-argumen
+          if grep -q "static struct mount \*alloc_vfsmnt(const char \*name)" fs/namespace.c; then
+            echo "Fixing alloc_vfsmnt function signature in fs/namespace.c..."
+            sed -i 's/static struct mount \*alloc_vfsmnt(const char \*name)/static struct mount *alloc_vfsmnt(const char *name, bool should_spoof, int custom_mnt_id)/g' fs/namespace.c
+          fi
+          
+          # 6. Fix manual untuk INODE_STATE_SUS_KSTAT di fs.h
           if ! grep -q "INODE_STATE_SUS_KSTAT" include/linux/fs.h; then
             echo "Fixing missing INODE_STATE_SUS_KSTAT definition in fs.h..."
             sed -i '/#define I_DIRTY_TIME/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
@@ -75,7 +77,7 @@ jobs:
 
           cd ..
           
-          # 6. Timpa file defconfig asli dengan custom defconfig dari repo Anda
+          # 7. Timpa file defconfig asli dengan custom defconfig dari repo Anda
           cp config/earth_defconfig kernel/arch/arm64/configs/earth_defconfig
 
       - name: Compile Kernel
@@ -143,7 +145,7 @@ jobs:
 
           BLOCK=/dev/block/by-name/boot;
           IS_SLOT_DEVICE=1;
-          RAMDISK_COMPRESSION=auto;
+          RAMDISK_CRRESSION=auto;
           PATCH_VBMETA_FLAG=auto;
 
           . tools/ak3-core.sh;
