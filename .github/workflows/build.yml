@@ -43,6 +43,12 @@ jobs:
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
           
+          # Bypass pemeriksaan inline hook BakaSU yang menyebabkan error pada Non-GKI 4.19
+          if [ -f KernelSU/kernel/tools/inline_hook_check.mk ]; then
+            echo "Bypassing BakaSU strict inline hook check for Non-GKI 4.19..."
+            echo "all:" > KernelSU/kernel/tools/inline_hook_check.mk
+          fi
+
           # 2. Clone SUSFS repository branch kernel-4.19
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs4ksu
           
