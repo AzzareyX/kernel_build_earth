@@ -40,139 +40,29 @@ jobs:
       - name: Integrate KernelSU Next (v3.2.0-legacy) & SUSFS
         run: |
           cd kernel
-          
-          # 1. Clone KernelSU-Next tag v3.2.0-legacy
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git -b v3.2.0-legacy KernelSU
-          
-          # 2. Hubungkan KernelSU ke build system kernel
           echo "obj-y += KernelSU/" >> drivers/Makefile
-          
-          # 3. Clone SUSFS repository branch kernel-4.19
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs4ksu
-          
-          # 4. Salin file pendukung SUSFS
           cp -f ../susfs4ksu/kernel_patches/fs/susfs.c fs/
           cp -f ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
           if [ -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ]; then
             cp -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
           fi
-          
-          # 5. Apply kernel-side patch SUSFS
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           
-          # 6. Buat file script Python terpisah untuk menghindari error sintaks YAML
-          cat << 'PYEOF' > patch_susfs.py
+          # Injeksi langsung via Python secara aman
+          python3 -c '
 import os
-
-# A. Injeksi setuid_hook.c
-for filepath in ["KernelSU/kernel/setuid_hook.c", "KernelSU/kernel/hook/setuid_hook.c"]:
-    if os.path.exists(filepath):
-        with open(filepath, "r") as f:
-            content = f.read()
-        if "#include <linux/susfs.h>" not in content:
-            content = content.replace("#include \"feature/kernel_umount.h\"", "#include \"feature/kernel_umount.h\"\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\n#endif")
-        if "susfs_try_umount(new_uid);" not in content:
-            content = content.replace("ksu_handle_umount(old_uid, new_uid);", "#ifdef CONFIG_KSU_SUSFS\n    susfs_try_umount(new_uid);\n#endif\n    ksu_handle_umount(old_uid, new_uid);")
-        with open(filepath, "w") as f:
-            f.write(content)
+for fpath in ["KernelSU/kernel/setuid_hook.c", "KernelSU/kernel/hook/setuid_hook.c"]:
+    if os.path.exists(fpath):
+        with open(fpath, "r") as f: c = f.read()
+        if "#include <linux/susfs.h>" not in c:
+            c = c.replace("#include \"feature/kernel_umount.h\"", "#include \"feature/kernel_umount.h\"\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\n#endif")
+        if "susfs_try_umount(new_uid);" not in c:
+            c = c.replace("ksu_handle_umount(old_uid, new_uid);", "#ifdef CONFIG_KSU_SUSFS\n    susfs_try_umount(new_uid);\n#endif\n    ksu_handle_umount(old_uid, new_uid);")
+        with open(fpath, "w") as f: f.write(c)
         break
-
-# B. Injeksi supercalls.c
-for filepath in ["KernelSU/kernel/supercalls.c", "KernelSU/kernel/supercall/supercall.c"]:
-    if os.path.exists(filepath):
-        with open(filepath, "r") as f:
-            content = f.read()
-        if "SUSFS_MAGIC" not in content:
-            magic_block = """
-#ifdef CONFIG_KSU_SUSFS
-    if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
-        switch(cmd) {
-        case CMD_SUSFS_ADD_SUS_PATH: susfs_add_sus_path((void __user *)arg); return 0;
-        case CMD_SUSFS_ADD_SUS_MOUNT: susfs_add_sus_mount((void __user *)arg); return 0;
-        case CMD_SUSFS_ADD_SUS_KSTAT: susfs_add_sus_kstat((void __user *)arg); return 0;
-        case CMD_SUSFS_UPDATE_SUS_KSTAT: susfs_update_sus_kstat((void __user *)arg); return 0;
-        case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY: susfs_add_sus_kstat((void __user *)arg); return 0;
-        case CMD_SUSFS_ADD_TRY_UMOUNT: susfs_add_try_umount((void __user *)arg); return 0;
-        case CMD_SUSFS_SET_UNAME: susfs_set_uname((void __user *)arg); return 0;
-        case CMD_SUSFS_ENABLE_LOG: susfs_set_log(1); return 0;
-        case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG: susfs_set_cmdline_or_bootconfig((void __user *)arg); return 0;
-        case CMD_SUSFS_ADD_OPEN_REDIRECT: susfs_add_open_redirect((void __user *)arg); return 0;
-        default: return 0;
-        }
-    }
-#endif
-"""
-            if "uapi/supercall.h" in content:
-                content = content.replace("#include \"uapi/supercall.h\"", "#include \"uapi/supercall.h\"\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\n#endif\n#ifndef SUSFS_MAGIC\n#define SUSFS_MAGIC 0x53555346\n#endif")
-            elif "#include \"ksu.h\"" in content:
-                content = content.replace("#include \"ksu.h\"", "#include \"ksu.h\"\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\n#endif\n#ifndef SUSFS_MAGIC\n#define SUSFS_MAGIC 0x53555346\n#endif")
-            
-            import re
-            content = re.sub(r"([ \t]*)if \(magic2 == CHANGE_MANAGER_UID\) \{", magic_block + r"\n\1if (magic2 == CHANGE_MANAGER_UID) {", content)
-        with open(filepath, "w") as f:
-            f.write(content)
-        break
-
-# C. Injeksi selinux.c
-selinux_path = "KernelSU/kernel/selinux/selinux.c"
-if os.path.exists(selinux_path):
-    with open(selinux_path, "r") as f:
-        content = f.read()
-    if "susfs_is_current_ksu_domain" not in content:
-        selinux_patch = """
-#ifdef CONFIG_KSU_SUSFS
-#define KERNEL_INIT_DOMAIN "u:r:init:s0"
-#define KERNEL_ZYGOTE_DOMAIN "u:r:zygote:s0"
-#define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
-u32 susfs_ksu_sid __read_mostly = 0;
-u32 susfs_init_sid __read_mostly = 0;
-u32 susfs_zygote_sid __read_mostly = 0;
-u32 susfs_priv_app_sid __read_mostly = 0;
-static inline void susfs_set_sid(const char *secctx_name, u32 *out_sid) {
-    int err; if (!secctx_name || !out_sid) return;
-    err = security_secctx_to_secid(secctx_name, strlen(secctx_name), out_sid);
-    if (err) return;
-}
-bool susfs_is_current_zygote_domain(void) { return unlikely(current_sid() == susfs_zygote_sid); }
-bool susfs_is_current_ksu_domain(void) { return unlikely(current_sid() == susfs_ksu_sid); }
-bool susfs_is_current_init_domain(void) { return unlikely(current_sid() == susfs_init_sid); }
-void susfs_set_batch_sid(void) {
-    susfs_set_sid(KERNEL_ZYGOTE_DOMAIN, &susfs_zygote_sid);
-    susfs_set_sid(KERNEL_SU_CONTEXT, &susfs_ksu_sid);
-    susfs_set_sid(KERNEL_INIT_DOMAIN, &susfs_init_sid);
-    susfs_set_sid(KERNEL_PRIV_APP_DOMAIN, &susfs_priv_app_sid);
-}
-#endif
-"""
-        content += "\n" + selinux_patch
-        with open(selinux_path, "w") as f:
-            f.write(content)
-
-# D. Injeksi init.c
-init_path = "KernelSU/kernel/core/init.c"
-if os.path.exists(init_path):
-    with open(init_path, "r") as f:
-        content = f.read()
-    if "susfs_set_batch_sid" not in content:
-        if "#include <linux/susfs.h>" not in content:
-            content = "#include <linux/susfs.h>\n" + content
-        import re
-        content = re.sub(r"(ksu_core_init\([^)]*\)\s*\{)", r"\1\n#ifdef CONFIG_KSU_SUSFS\n    susfs_set_batch_sid();\n#endif", content)
-        with open(init_path, "w") as f:
-            f.write(content)
-
-# E. Injeksi kernel_umount.c
-umount_path = "KernelSU/kernel/feature/kernel_umount.c"
-if os.path.exists(umount_path):
-    with open(umount_path, "r") as f:
-        content = f.read()
-    if "ksu_try_umount" not in content:
-        content += "\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nvoid ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid) { try_umount(mnt, flags); }\n#endif\n"
-        with open(umount_path, "w") as f:
-            f.write(content)
-PYEOF
-
-          python3 patch_susfs.py
+          '
           cd ..
           cp config/earth_defconfig kernel/arch/arm64/configs/earth_defconfig
 
@@ -181,7 +71,6 @@ PYEOF
           cd kernel
           CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
           export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
-          
           make O=out ARCH=arm64 earth_defconfig
           make -j$(nproc) O=out \
             ARCH=arm64 \
@@ -207,10 +96,8 @@ PYEOF
           if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
             cp kernel/out/arch/arm64/boot/dtbo.img anykernel/
           fi
-          
           cd anykernel
-          cat << 'EOF' > anykernel.sh
-          ### AnyKernel3 Ramdisk Mod Script
+          cat << 'AKEOF' > anykernel.sh
           properties() { '
           kernel.string=Redmi 12C KSU-Next + SUSFS Kernel
           do.devicecheck=1
@@ -223,22 +110,18 @@ PYEOF
           supported.versions=
           supported.patchlevels=
           '; } # end properties
-
           boot_attributes() {
           set_perm_recursive 0 0 755 644 $RAMDISK/*;
           set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-          } # end attributes
-
+          }
           BLOCK=/dev/block/by-name/boot;
           IS_SLOT_DEVICE=1;
           RAMDISK_COMPRESSION=auto;
           PATCH_VBMETA_FLAG=auto;
-
           . tools/ak3-core.sh;
           dump_boot;
           write_boot;
-          EOF
-          
+          AKEOF
           zip -r9 ../Redmi12C-KSU-Next-SUSFS.zip *
 
       - name: Upload Build Artifact
