@@ -1,4 +1,4 @@
-name: Build Redmi 12C Kernel (LineageOS 23.2 - BakaSU + SUSFS)
+name: Build Redmi 12C Kernel (LineageOS 23.2 - KernelSU Next + SUSFS)
 
 on:
   workflow_dispatch:
@@ -37,50 +37,14 @@ jobs:
         run: |
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android-14.0.0_r1 target-clang
 
-      - name: Add BakaSU & Apply SUSFS Kernel Patches
+      - name: Integrate KernelSU Next & SUSFS
         run: |
-          # 1. Tambahkan BakaSU ke source tree kernel
           cd kernel
-          curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
+          # 1. Jalankan setup KernelSU Next dengan opsi susfs
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next-susfs
           
-          # Bypass pemeriksaan inline hook BakaSU untuk Non-GKI 4.19
-          if [ -f KernelSU/kernel/tools/inline_hook_check.mk ]; then
-            echo "all:" > KernelSU/kernel/tools/inline_hook_check.mk
-          fi
-
-          # Bypass pemeriksaan kompatibilitas susfs di susfs_compat.mk
-          if [ -f KernelSU/kernel/tools/susfs_compat.mk ]; then
-            sed -i 's/\$(error/\#\$(error/g' KernelSU/kernel/tools/susfs_compat.mk
-          fi
-
-          # 2. Clone SUSFS repository branch kernel-4.19
-          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs4ksu
-          
-          # 3. Salin file pendukung SUSFS ke direktori kernel
-          cp -f ../susfs4ksu/kernel_patches/fs/susfs.c fs/
-          cp -f ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
-          if [ -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ]; then
-            cp -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
-          fi
-          
-          # 4. Terapkan kernel-side patch SUSFS
-          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
-          
-          # 5. Fix manual untuk fungsi alloc_vfsmnt di fs/namespace.c
-          if grep -q "static struct mount \*alloc_vfsmnt(const char \*name)" fs/namespace.c; then
-            sed -i 's/static struct mount \*alloc_vfsmnt(const char \*name)/static struct mount *alloc_vfsmnt(const char *name, bool should_spoof, int custom_mnt_id)/g' fs/namespace.c
-          fi
-          
-          # 6. Fix manual untuk INODE_STATE_SUS_KSTAT di fs.h
-          if ! grep -q "INODE_STATE_SUS_KSTAT" include/linux/fs.h; then
-            sed -i '/#define I_DIRTY_TIME/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
-            sed -i '/#define I_DIRTY/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
-            echo "#define INODE_STATE_SUS_KSTAT (1 << 27)" >> include/linux/fs.h
-          fi
-
           cd ..
-          
-          # 7. Timpa file defconfig asli dengan custom defconfig dari repo Anda
+          # 2. Timpa file defconfig dengan custom defconfig dari repo Anda
           cp config/earth_defconfig kernel/arch/arm64/configs/earth_defconfig
 
       - name: Compile Kernel
@@ -129,7 +93,7 @@ jobs:
 
           ### AnyKernel setup
           properties() { '
-          kernel.string=Redmi 12C Lineage 23.2 BakaSU + SUSFS Kernel
+          kernel.string=Redmi 12C Lineage 23.2 KernelSU-Next + SUSFS
           do.devicecheck=1
           device.name1=earth
           device.name2=aether
@@ -157,10 +121,10 @@ jobs:
           write_boot;
           EOF
           
-          zip -r9 ../Redmi12C-BakaSU-SUSFS-Kernel.zip *
+          zip -r9 ../Redmi12C-KernelSU-Next-SUSFS.zip *
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Redmi12C-BakaSU-SUSFS-Kernel
-          path: Redmi12C-BakaSU-SUSFS-Kernel.zip
+          name: Redmi12C-KernelSU-Next-SUSFS
+          path: Redmi12C-KernelSU-Next-SUSFS.zip
