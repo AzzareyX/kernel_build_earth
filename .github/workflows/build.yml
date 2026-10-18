@@ -43,6 +43,12 @@ jobs:
           # 1. Setup KernelSU Next mode legacy
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
           
+          # Fix path_umount missing symbol for kernel 4.19 in KernelSU Next
+          if [ -f KernelSU/kernel/feature/kernel_umount.c ]; then
+            echo "Patching kernel_umount.c for kernel 4.19 compatibility..."
+            sed -i 's/path_umount/ksu_path_umount/g' KernelSU/kernel/feature/kernel_umount.c || true
+          fi
+
           # 2. Clone SUSFS repository
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs4ksu
           
