@@ -39,7 +39,7 @@ jobs:
 
       - name: Add BakaSU & Apply SUSFS Kernel Patches
         run: |
-          # 1. Tambahkan BakaSU ke source tree kernel (Sesuai dokumentasi BakaSU)
+          # 1. Tambahkan BakaSU ke source tree kernel
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
           
@@ -53,12 +53,20 @@ jobs:
             cp -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
           fi
           
-          # 4. Terapkan kernel-side patch dari SUSFS repository
+          # 4. Terapkan kernel-side patch dari SUSFS
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           
+          # 5. Fix manual untuk INODE_STATE_SUS_KSTAT di fs.h
+          if ! grep -q "INODE_STATE_SUS_KSTAT" include/linux/fs.h; then
+            echo "Fixing missing INODE_STATE_SUS_KSTAT definition in fs.h..."
+            sed -i '/#define I_DIRTY_TIME/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
+            sed -i '/#define I_DIRTY/a \ #define INODE_STATE_SUS_KSTAT (1 << 27)' include/linux/fs.h || \
+            echo "#define INODE_STATE_SUS_KSTAT (1 << 27)" >> include/linux/fs.h
+          fi
+
           cd ..
           
-          # 5. Timpa file defconfig asli dengan custom defconfig dari repo Anda
+          # 6. Timpa file defconfig asli dengan custom defconfig dari repo Anda
           cp config/earth_defconfig kernel/arch/arm64/configs/earth_defconfig
 
       - name: Compile Kernel
@@ -142,4 +150,3 @@ jobs:
         with:
           name: Redmi12C-BakaSU-SUSFS-Kernel
           path: Redmi12C-BakaSU-SUSFS-Kernel.zip
-
