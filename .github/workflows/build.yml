@@ -50,19 +50,8 @@ jobs:
           fi
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           
-          # Injeksi langsung via Python secara aman
-          python3 -c '
-import os
-for fpath in ["KernelSU/kernel/setuid_hook.c", "KernelSU/kernel/hook/setuid_hook.c"]:
-    if os.path.exists(fpath):
-        with open(fpath, "r") as f: c = f.read()
-        if "#include <linux/susfs.h>" not in c:
-            c = c.replace("#include \"feature/kernel_umount.h\"", "#include \"feature/kernel_umount.h\"\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\n#endif")
-        if "susfs_try_umount(new_uid);" not in c:
-            c = c.replace("ksu_handle_umount(old_uid, new_uid);", "#ifdef CONFIG_KSU_SUSFS\n    susfs_try_umount(new_uid);\n#endif\n    ksu_handle_umount(old_uid, new_uid);")
-        with open(fpath, "w") as f: f.write(c)
-        break
-          '
+          python3 -c "import os; f='KernelSU/kernel/setuid_hook.c' if os.path.exists('KernelSU/kernel/setuid_hook.c') else 'KernelSU/kernel/hook/setuid_hook.c'; c=open(f).read(); c=c.replace('ksu_handle_umount(old_uid, new_uid);', '#ifdef CONFIG_KSU_SUSFS\n    susfs_try_umount(new_uid);\n#endif\n    ksu_handle_umount(old_uid, new_uid);'); open(f,'w').write(c)"
+          
           cd ..
           cp config/earth_defconfig kernel/arch/arm64/configs/earth_defconfig
 
