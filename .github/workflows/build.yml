@@ -1,4 +1,4 @@
-name: Build Redmi 12C Kernel (LineageOS 23.2 - KernelSU Next + SUSFS)
+name: Build Redmi 12C Kernel (KernelSU Next + SUSFS Experimental)
 
 on:
   workflow_dispatch:
@@ -37,28 +37,35 @@ jobs:
         run: |
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android-14.0.0_r1 target-clang
 
-      - name: Integrate KernelSU Next & SUSFS
+      - name: Integrate KernelSU Next & SUSFS Patch
         run: |
           cd kernel
-          # 1. Jalankan setup KernelSU Next dengan opsi susfs
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next-susfs
+          # 1. Setup KernelSU Next mode legacy
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
+          
+          # 2. Clone SUSFS repository
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.19 ../susfs4ksu
+          
+          # 3. Salin header SUSFS
+          cp -f ../susfs4ksu/kernel_patches/fs/susfs.c fs/
+          cp -f ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
+          if [ -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ]; then
+            cp -f ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
+          fi
+          
+          # 4. Terapkan patch SUSFS ke kernel
+          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch || true
           
           cd ..
-          # 2. Timpa file defconfig dengan custom defconfig dari repo Anda
           cp config/earth_defconfig kernel/arch/arm64/configs/earth_defconfig
 
       - name: Compile Kernel
         run: |
           cd kernel
-          
-          # Path Clang toolchain
           CLANG_DIR="$GITHUB_WORKSPACE/target-clang"
           export PATH="$CLANG_DIR/clang-r416183b/bin:$PATH"
           
-          # Konfigurasi defconfig
           make O=out ARCH=arm64 earth_defconfig
-          
-          # Kompilasi kernel
           make -j$(nproc) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -76,9 +83,7 @@ jobs:
       - name: Package Kernel with AnyKernel3
         run: |
           git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/osm0sis/AnyKernel3.git anykernel
-          
           cp kernel/out/arch/arm64/boot/Image.gz anykernel/
-          
           if [ -f kernel/out/arch/arm64/boot/dtb.img ]; then
             cp kernel/out/arch/arm64/boot/dtb.img anykernel/
           fi
@@ -89,11 +94,8 @@ jobs:
           cd anykernel
           cat << 'EOF' > anykernel.sh
           ### AnyKernel3 Ramdisk Mod Script
-          ## osm0sis @ xda-developers
-
-          ### AnyKernel setup
           properties() { '
-          kernel.string=Redmi 12C Lineage 23.2 KernelSU-Next + SUSFS
+          kernel.string=Redmi 12C KernelSU-Next SUSFS
           do.devicecheck=1
           device.name1=earth
           device.name2=aether
@@ -116,15 +118,14 @@ jobs:
           PATCH_VBMETA_FLAG=auto;
 
           . tools/ak3-core.sh;
-
           dump_boot;
           write_boot;
           EOF
           
-          zip -r9 ../Redmi12C-KernelSU-Next-SUSFS.zip *
+          zip -r9 ../Redmi12C-KSU-Next-SUSFS.zip *
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Redmi12C-KernelSU-Next-SUSFS
-          path: Redmi12C-KernelSU-Next-SUSFS.zip
+          name: Redmi12C-KSU-Next-SUSFS
+          path: Redmi12C-KSU-Next-SUSFS.zip
